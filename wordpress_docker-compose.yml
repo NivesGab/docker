@@ -1,0 +1,120 @@
+version: "3.3"
+
+services:
+
+  traefik:
+    image: "traefik:v2.3"
+    container_name: "traefik"
+    restart: unless-stopped
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=nives.gabrijan@gmail.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.traefikweb-auth.basicauth.users=nives:$$apr1$$lMCT/Z1n$$b2R7J6ZkKYX0VxWOWb8H6."
+     # - "traefik.http.middlewares.traefikweb-auth.basicauth.usersfile=auth/.htpasswd"
+      - "traefik.http.routers.traefikweb-secure.middlewares=traefikweb-auth"
+      - "traefik.http.routers.traefikweb-secure.rule=Host(`traefik.nivest2.duckdns.org`)"
+      - "traefik.http.routers.traefikweb.rule=Host(`traefik.nivest2.duckdns.org`)"
+      - "traefik.http.routers.traefikweb.entrypoints=web"
+      - "traefik.http.routers.traefikweb-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefikweb-secure.tls=true"
+      - "traefik.http.routers.traefikweb-secure.tls.certresolver=myresolver"
+      - "traefik.http.middlewares.traefikweb-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.traefikweb.middlewares=traefikweb-https-redirect"
+      - "traefik.docker.network=traefik_traefik"
+      - "traefik.http.routers.traefikweb-secure.service=api@internal"
+      - "traefik.http.services.traefikweb.loadbalancer.server.port=80"
+      - "traefik.http.services.traefikweb.loadbalancer.server.port=9000"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+   #   - "/home/nives/docker/shared/.htpasswd:/auth/.htpasswd"
+    networks:
+      - "traefik"
+
+  portainer:
+    image: "portainer/portainer:latest"
+    container_name: "portainer"
+    restart: "unless-stopped"
+    networks:
+      - traefik
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/home/nives/docker/portainer/portainer_data:/data"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.entrypoints=web"
+      - "traefik.http.routers.portainer-secure.rule=Host(`portainer.nivest2.duckdns.org`)"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.nivest2.duckdns.org`)"
+      - "traefik.http.routers.portainer-secure.entrypoints=websecure"
+      - "traefik.http.middlewares.portainer-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.portainer.middlewares=portainer-https-redirect"
+      - "traefik.http.routers.portainer-secure.tls=true"
+      - "traefik.http.routers.portainer-secure.tls.certresolver=myresolver"
+      - "traefik.http.routers.portainer-secure.service=portainer"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.docker.network=traefik_traefik"
+  db:
+    image: mariadb:latest
+    container_name: db
+    volumes:
+      - /home/nives/docker/db:/var/lib/mysql
+    networks:
+      - dbnet
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: *********
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: dbuser
+      MYSQL_PASSWORD: **********
+
+
+
+  wordpress:
+    depends_on:
+      - db
+    image: "wordpress"
+    restart: "unless-stopped"
+    volumes:
+      - /home/nives/docker/wordpress:/var/www/html/wp-content
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: dbuser
+      WORDPRESS_DB_PASSWORD: *********
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wordpress1.entrypoints=web"
+      - "traefik.http.routers.wordpress2.entrypoints=web"
+      - "traefik.http.routers.wordpress1-secure.rule=Host(`wordpress1.nivest2.duckdns.org`)"
+      - "traefik.http.routers.wordpress1.rule=Host(`wordpress1.nivest2.duckdns.org`)"
+      - "traefik.http.routers.wordpress2.rule=Host(`edusrv47a.t-2.com`)"
+      - "traefik.http.routers.wordpress1-secure.entrypoints=websecure"
+      - "traefik.http.middlewares.wordpress1-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.wordpress1.middlewares=wordpress1-https-redirect"
+      - "traefik.http.routers.wordpress1-secure.tls=true"
+      - "traefik.http.routers.wordpress1-secure.tls.certresolver=myresolver"
+      - "traefik.http.routers.wordpress1-secure.service=wordpress1"
+      - "traefik.http.routers.wordpress2.service=wordpress1"
+      - "traefik.http.services.wordpress1.loadbalancer.server.port=80"
+      - "traefik.docker.network=traefik_traefik"
+
+    networks:
+      - traefik
+      - dbnet
+networks:
+  traefik:
+  dbnet:
